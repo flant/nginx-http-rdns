@@ -303,7 +303,7 @@ static char * dns_resolve_directive(ngx_conf_t * cf, ngx_command_t * cmd, void *
 
 /*
  * Module check enabled state as follows:
- *  1. Check existanse of request context.
+ *  1. Check existence of request context.
  *  2. If exists take enable from 'enable source',
  *      take enabled from location config otherwise.
  */
