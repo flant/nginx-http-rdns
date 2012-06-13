@@ -87,8 +87,11 @@ static ngx_http_dns_resolve_ctx_t * create_context(ngx_http_request_t * r);
 static ngx_command_t  ngx_http_dns_resolve_commands[] = {
 
     { ngx_string("dns_resolve"),
-      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_SIF_CONF|NGX_HTTP_LOC_CONF
-                        |NGX_HTTP_LIF_CONF|NGX_CONF_FLAG,
+      NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_FLAG
+#ifndef NGX_DNS_RESOLVE_NO_IF
+      | NGX_HTTP_LIF_CONF | NGX_HTTP_SIF_CONF
+#endif
+      ,
       dns_resolve_directive,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
