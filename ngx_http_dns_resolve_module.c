@@ -513,6 +513,14 @@ static void enable_code(ngx_http_script_engine_t * e) {
 
         ngx_log_debug(NGX_LOG_DEBUG_HTTP, e->request->connection->log, 0,
                 "dns_resolve enable code, enabled = %d", ctx->enabled);
+
+        if (ctx->enabled) {
+            ngx_log_debug(NGX_LOG_DEBUG_HTTP, e->request->connection->log, 0,
+                    "dns_resolve enable code, breaking codes");
+
+            ngx_http_script_break_code(e);
+            return;
+        }
     }
 
     e->ip += sizeof(ngx_http_dns_resolve_enable_code_t);
