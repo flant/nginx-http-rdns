@@ -408,7 +408,7 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
 
     if (ctx == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns handler: failed to get request context");
+                "rdns dns request handler: failed to get request context");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -416,7 +416,7 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
     loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_rdns_module);
     if (loc_cf == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns handler: failed to get rdns main config");
+                "rdns dns request handler: failed to get rdns main config");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -424,21 +424,21 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
     rdns_result_val = r->variables + loc_cf->rdns_result_index;
     if (rdns_result_val == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns handler: bad rdns_result variable");
+                "rdns dns request handler: bad rdns_result variable");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
 
     if (rctx->state) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns rdns handler: failed with error '%s'",
+                "rdns dns request handler: failed with error '%s'",
                 ngx_resolver_strerror(rctx->state));
 
         rdns_result_val->data = var_rdns_result_not_found.data;
         rdns_result_val->len = var_rdns_result_not_found.len;
     } else {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns rdns handler: result='%V'",
+                "rdns dns request handler: result='%V'",
                 &rctx->name);
 
         rdns_result_val->data = ngx_palloc(r->pool, rctx->name.len * sizeof(u_char));
