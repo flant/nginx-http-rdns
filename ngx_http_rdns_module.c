@@ -33,6 +33,12 @@
 #endif
 
 
+typedef struct {
+    ngx_flag_t enabled;
+    ngx_flag_t double_mode;
+} ngx_http_rdns_common_conf_t;
+
+
 #ifndef NGX_RDNS_NO_IF
 
 extern ngx_module_t ngx_http_rewrite_module;
@@ -40,7 +46,7 @@ extern ngx_module_t ngx_http_rewrite_module;
 
 typedef struct {
     ngx_http_script_code_pt code;
-    ngx_flag_t enabled;
+    ngx_http_rdns_common_conf_t conf;
 } ngx_http_rdns_enable_code_t;
 
 
@@ -52,12 +58,6 @@ static void enable_code(ngx_http_script_engine_t * e);
 static const ngx_str_t var_rdns_result_name = ngx_string("rdns_hostname");
 static const ngx_str_t var_rdns_result_uninitialized = ngx_string("-");
 static const ngx_str_t var_rdns_result_not_found = ngx_string("not found");
-
-
-typedef enum {
-    NGX_HTTP_RDNS_CTX_ENABLE,
-    NGX_HTTP_RDNS_CONF_ENABLE
-} enable_source_t;
 
 
 typedef struct {
@@ -75,15 +75,18 @@ typedef struct {
 
 typedef struct {
     ngx_int_t rdns_result_index;
-    ngx_flag_t enabled;
+    ngx_http_rdns_common_conf_t conf;
     ngx_array_t * rules;
 } ngx_http_rdns_loc_conf_t;
 
 
 typedef struct {
     ngx_flag_t resolved;
-    enable_source_t enable_source;
-    ngx_flag_t enabled;
+    ngx_http_rdns_common_conf_t conf;
+    enum {
+        NGX_HTTP_RDNS_CONF_CTX,
+        NGX_HTTP_RDNS_CONF_CONF
+    } conf_source;
 } ngx_http_rdns_ctx_t;
 
 
@@ -98,10 +101,14 @@ static char *    rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * con
 static ngx_int_t resolver_handler(ngx_http_request_t * r);
 static ngx_int_t access_handler(ngx_http_request_t * r);
 static void      rdns_handler(ngx_resolver_ctx_t * ctx);
+static void      resolver_handler_finalize(ngx_http_request_t * r, ngx_http_rdns_ctx_t * ctx);
+static void      dns_request(ngx_http_request_t * r, ngx_str_t hostname);
+static void      dns_handler(ngx_resolver_ctx_t * ctx);
 static ngx_int_t var_rdns_result_getter(ngx_http_request_t * r, ngx_http_variable_value_t * v, uintptr_t data);
-static ngx_http_rdns_ctx_t * create_context(ngx_http_request_t * r);
-static ngx_flag_t rdns_check_enabled(ngx_http_rdns_ctx_t * ctx, ngx_http_rdns_loc_conf_t * loc_cf);
-static ngx_flag_t rule_is_match(ngx_http_request_t * r, ngx_http_rdns_rule_t * rule, ngx_str_t * domain);
+
+static ngx_http_rdns_ctx_t *         create_context(ngx_http_request_t * r);
+static ngx_http_rdns_common_conf_t * rdns_get_common_conf(ngx_http_rdns_ctx_t * ctx, ngx_http_rdns_loc_conf_t * loc_cf);
+static ngx_flag_t                    rule_is_match(ngx_http_request_t * r, ngx_http_rdns_rule_t * rule, ngx_str_t * domain);
 
 
 static ngx_command_t  ngx_http_rdns_commands[] = {
@@ -173,7 +180,8 @@ static void * create_loc_conf(ngx_conf_t * cf) {
 
     conf = ngx_palloc(cf->pool, sizeof(ngx_http_rdns_loc_conf_t));
     if (conf != NULL) {
-        conf->enabled = NGX_CONF_UNSET;
+        conf->conf.enabled = NGX_CONF_UNSET;
+        conf->conf.double_mode = NGX_CONF_UNSET;
         conf->rdns_result_index = NGX_CONF_UNSET;
     }
 
@@ -199,7 +207,8 @@ static char * merge_loc_conf(ngx_conf_t * cf, void * parent, void * child) {
 
     core_loc_cf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
 
-    ngx_conf_merge_value(conf->enabled, prev->enabled, 0);
+    ngx_conf_merge_value(conf->conf.enabled, prev->conf.enabled, 0);
+    ngx_conf_merge_value(conf->conf.double_mode, prev->conf.double_mode, 0);
     ngx_conf_merge_value(conf->rdns_result_index, prev->rdns_result_index,
             ngx_http_get_variable_index(cf, (ngx_str_t *)&var_rdns_result_name));
 
@@ -207,7 +216,7 @@ static char * merge_loc_conf(ngx_conf_t * cf, void * parent, void * child) {
         conf->rules = prev->rules;
     }
 
-    if (conf->enabled && ((core_loc_cf->resolver == NULL) || (core_loc_cf->resolver->udp_connections.nelts == 0))) {
+    if (conf->conf.enabled && ((core_loc_cf->resolver == NULL) || (core_loc_cf->resolver->udp_connections.nelts == 0))) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "no core resolver defined for rdns");
         return NGX_CONF_ERROR;
     }
@@ -286,7 +295,7 @@ static ngx_int_t postconfig(ngx_conf_t * cf) {
 static char * rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) {
     ngx_http_rdns_loc_conf_t * loc_conf = conf;
     ngx_str_t * value;
-    ngx_flag_t enabled = 0;
+    ngx_http_rdns_common_conf_t cconf;
 
     debug("rdns directive");
 
@@ -296,15 +305,23 @@ static char * rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) 
         return NGX_CONF_ERROR;
     }
 
+    cconf.enabled = 0;
+    cconf.double_mode = 0;
+
     value = cf->args->elts;
     if (ngx_strcasecmp(value[1].data, (u_char *)"on") == 0) {
-        enabled = 1;
+        cconf.enabled = 1;
+        cconf.double_mode = 0;
     } else if (ngx_strcasecmp(value[1].data, (u_char *)"off") == 0) {
-        enabled = 0;
+        cconf.enabled = 0;
+        cconf.double_mode = 0;
+    } else if (ngx_strcasecmp(value[1].data, (u_char *)"double") == 0) {
+        cconf.enabled = 1;
+        cconf.double_mode = 1;
     } else {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                      "invalid value \"%s\" in \"%s\" directive, "
-                     "it must be \"on\" or \"off\"",
+                     "it must be \"on\" or \"off\" or \"double\"",
                      value[1].data, cmd->name.data);
         return NGX_CONF_ERROR;
     }
@@ -334,17 +351,17 @@ static char * rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) 
         }
 
         code->code = enable_code;
-        code->enabled = enabled;
-        loc_conf->enabled = enabled;
+        code->conf = cconf;
+        loc_conf->conf = cconf;
     } else {
         /* statically enable module otherwise */
 #endif
-        loc_conf->enabled = enabled;
+        loc_conf->conf = cconf;
 #ifndef NGX_RDNS_NO_IF
     }
 #endif
 
-    debug("(DONE) rdns directive: enabled = %lu", enabled);
+    debug("(DONE) rdns directive: enabled = %lu, double_mode = %lu", cconf.enabled, cconf.double_mode);
 
     return NGX_CONF_OK;
 }
@@ -436,68 +453,68 @@ static char * rdns_deny_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * c
 }
 
 
-/*
- * Module check enabled state as follows:
- *  1. Check existence of request context.
- *  2. If exists take enable from 'enable source',
- *      take enabled from location config otherwise.
- */
 static ngx_int_t resolver_handler(ngx_http_request_t * r) {
     ngx_http_rdns_loc_conf_t * loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_rdns_module);
     ngx_http_core_loc_conf_t * core_loc_cf;
     ngx_resolver_ctx_t * rctx;
     ngx_http_rdns_ctx_t * ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
     struct sockaddr_in * sin;
+    ngx_http_rdns_common_conf_t * cconf;
 
     if (loc_cf == NULL) {
         /* isn't possible, but who knows... */
         return NGX_DECLINED;
     }
 
-    if (rdns_check_enabled(ctx, loc_cf)) {
+    cconf = rdns_get_common_conf(ctx, loc_cf);
+    if (cconf == NULL) {
+        return NGX_DECLINED;
+    }
+
+    if (cconf->enabled) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns handler");
+                "rdns: resolver handler");
 
         if ((ctx != NULL) && ctx->resolved) {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns handler: already resolved");
+                    "rdns: resolver handler: already resolved");
             return NGX_DECLINED;
         } else if (ctx == NULL) {
             /* Context needed because of ctx->resolved flag */
             ctx = create_context(r);
             if (ctx == NULL) {
                 ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                        "rdns handler: unable to create request context");
+                        "rdns: resolver handler: unable to create request context");
                 return NGX_HTTP_INTERNAL_SERVER_ERROR;
             }
 
-            ctx->enable_source = NGX_HTTP_RDNS_CONF_ENABLE;
+            ctx->conf_source = NGX_HTTP_RDNS_CONF_CONF;
             ctx->resolved = 0;
         }
 
         if (loc_cf == NULL) {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns handler: failed to get rdns main config");
+                    "rdns: resolver handler: failed to get rdns main config");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         core_loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
         if (core_loc_cf == NULL) {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns handler: failed to get core location config");
+                    "rdns: resolver handler: failed to get core location config");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         rctx = ngx_resolve_start(core_loc_cf->resolver, NULL);
         if (rctx == NULL) {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns handler: unable to create resolver context");
+                    "rdns: resolver handler: unable to create resolver context");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         if (rctx == NGX_NO_RESOLVER) {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns handler: core resolver is not defined");
+                    "rdns: resolver handler: core resolver is not defined");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
@@ -510,12 +527,12 @@ static ngx_int_t resolver_handler(ngx_http_request_t * r) {
 
         if (ngx_resolve_addr(rctx) != NGX_OK) {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns handler: failed to make rdns request");
+                    "rdns: resolver handler: failed to make rdns request");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns handler [DONE]");
+                "(DONE) rdns: resolver handler");
         return NGX_DONE;
     } else {
         return NGX_DECLINED;
@@ -526,35 +543,43 @@ static ngx_int_t resolver_handler(ngx_http_request_t * r) {
 static ngx_int_t access_handler(ngx_http_request_t * r) {
     ngx_http_rdns_loc_conf_t * loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_rdns_module);
     ngx_http_rdns_ctx_t * ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
+    ngx_http_rdns_common_conf_t * cconf;
 
     if (loc_cf == NULL) {
         /* isn't possible, but who knows... */
         return NGX_OK;
     }
 
-    if (rdns_check_enabled(ctx, loc_cf)) {
+    cconf = rdns_get_common_conf(ctx, loc_cf);
+    if (cconf == NULL) {
+        return NGX_OK;
+    }
+
+    if (cconf->enabled) {
         ngx_uint_t i;
         ngx_http_rdns_rule_t * rules;
         ngx_http_variable_value_t * rdns_result_val = r->variables + loc_cf->rdns_result_index;
         ngx_str_t rdns_result;
 
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns access handler");
+                "rdns: access handler");
 
-        rdns_result.data = rdns_result_val->data;
-        rdns_result.len = rdns_result_val->len;
-        rules = loc_cf->rules->elts;
+        if (loc_cf->rules != NULL) {
+            rdns_result.data = rdns_result_val->data;
+            rdns_result.len = rdns_result_val->len;
+            rules = loc_cf->rules->elts;
 
-        for (i = 0; i < loc_cf->rules->nelts; ++i) {
-            if (rule_is_match(r, rules + i, &rdns_result)) {
-                if (rules[i].access_type == NGX_HTTP_RDNS_RULE_ALLOW) {
-                    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                            "rdns access handler: access allowed");
-                    return NGX_OK;
-                } else {
-                    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                            "rdns access handler: access denied");
-                    return NGX_HTTP_FORBIDDEN;
+            for (i = 0; i < loc_cf->rules->nelts; ++i) {
+                if (rule_is_match(r, rules + i, &rdns_result)) {
+                    if (rules[i].access_type == NGX_HTTP_RDNS_RULE_ALLOW) {
+                        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                                "rdns: access handler: access allowed");
+                        return NGX_OK;
+                    } else {
+                        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                                "rdns: access handler: access denied");
+                        return NGX_HTTP_FORBIDDEN;
+                    }
                 }
             }
         }
@@ -572,13 +597,14 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
     ngx_http_rdns_ctx_t * ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
     ngx_http_rdns_loc_conf_t * loc_cf;
     ngx_http_variable_value_t * rdns_result_val;
+    ngx_http_rdns_common_conf_t * cconf;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-            "rdns dns request handler");
+            "rdns: reverse dns request handler");
 
     if (ctx == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns dns request handler: failed to get request context");
+                "rdns: reverse dns request handler: failed to get request context");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -586,7 +612,7 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
     loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_rdns_module);
     if (loc_cf == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns dns request handler: failed to get rdns main config");
+                "rdns: reverse dns request handler: failed to get rdns main config");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -594,33 +620,168 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
     rdns_result_val = r->variables + loc_cf->rdns_result_index;
     if (rdns_result_val == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns dns request handler: bad rdns_result variable");
+                "rdns: reverse dns request handler: bad rdns_result variable");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
 
     if (rctx->state) {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns dns request handler: failed with error '%s'",
+                "rdns: reverse dns request handler: failed with error '%s'",
                 ngx_resolver_strerror(rctx->state));
 
         rdns_result_val->data = var_rdns_result_not_found.data;
         rdns_result_val->len = var_rdns_result_not_found.len;
+        rdns_result_val->valid = 1;
+        rdns_result_val->not_found = 0;
+
+        ngx_resolve_addr_done(rctx);
+
+        resolver_handler_finalize(r, ctx);
     } else {
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns dns request handler: result='%V'",
+                "rdns: reverse dns request handler: result='%V'",
                 &rctx->name);
 
         rdns_result_val->data = ngx_palloc(r->pool, rctx->name.len * sizeof(u_char));
         ngx_memcpy(rdns_result_val->data, rctx->name.data, rctx->name.len);
         rdns_result_val->len = rctx->name.len;
+        rdns_result_val->valid = 1;
+        rdns_result_val->not_found = 0;
+
+        ngx_resolve_addr_done(rctx);
+
+        cconf = rdns_get_common_conf(ctx, loc_cf);
+        if (cconf == NULL) {
+            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                    "rdns: reverse dns request handler: failed to get common config");
+            ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+            return;
+        }
+
+        if (cconf->double_mode) {
+            ngx_str_t hostname;
+
+            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                    "rdns: reverse dns request handler: double mode");
+
+            hostname.data = rdns_result_val->data;
+            hostname.len = rdns_result_val->len;
+            dns_request(r, hostname);
+        } else {
+                resolver_handler_finalize(r, ctx);
+
+                ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                            "(DONE) rdns: reverse dns request handler");
+        }
+    }
+}
+
+
+static void dns_request(ngx_http_request_t * r, ngx_str_t hostname) {
+    ngx_resolver_ctx_t * rctx;
+    ngx_http_core_loc_conf_t * core_loc_cf;
+
+    if (r == NULL) {
+        return;
     }
 
-    rdns_result_val->valid = 1;
-    rdns_result_val->not_found = 0;
+    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            "rdns: dns request");
+
+    core_loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
+    if (core_loc_cf == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                "rnds: dns request: failed to get core location config");
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    rctx = ngx_resolve_start(core_loc_cf->resolver, NULL);
+    if (rctx == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                "rdns: dns request: unable to create resolver context");
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    if (rctx == NGX_NO_RESOLVER) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                "rdns: dns request: core resolver is not defined");
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    rctx->name = hostname;
+    rctx->type = NGX_RESOLVE_A;
+    rctx->handler = dns_handler;
+    rctx->data = r;
+    rctx->timeout = core_loc_cf->resolver_timeout;
+
+    if (ngx_resolve_addr(rctx) != NGX_OK) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                "rdns: dns request: failed to make rdns request");
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            "(DONE) rdns: dns request");
+}
+
+
+static void dns_handler(ngx_resolver_ctx_t * rctx) {;
+    ngx_http_request_t * r = rctx->data;
+    ngx_http_rdns_ctx_t * ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
+    struct sockaddr_in * sin;
+
+    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            "rdns: dns request handler: '%V' -> '%d'", &rctx->name, rctx->addr);
+
+    if (ctx == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                "rdns: dns request handler: failed to get request context");
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    if (rctx->state) {
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                "rdns: dns request handler: failed with error '%s'",
+                ngx_resolver_strerror(rctx->state));
+
+        ngx_resolve_name_done(rctx);
+        resolver_handler_finalize(r, ctx);
+        return;
+    } else {
+        sin = (struct sockaddr_in *) r->connection->sockaddr;
+        if (rctx->addr != sin->sin_addr.s_addr) {
+            ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                    "rdns: dns request handler: resolving inconsistency: '%d' -> '%V' -> '%d': terminating request",
+                    sin->sin_addr.s_addr, &rctx->name, rctx->addr);
+
+            ngx_resolve_name_done(rctx);
+            /* No magic allowed */
+            ngx_http_finalize_request(r, NGX_HTTP_FORBIDDEN);
+            return;
+        } else {
+            ngx_resolve_name_done(rctx);
+
+            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                    "(DONE) rdns: dns request handler");
+
+            resolver_handler_finalize(r, ctx);
+        }
+    }
+}
+
+
+static void resolver_handler_finalize(ngx_http_request_t * r, ngx_http_rdns_ctx_t * ctx) {
+    if (r == NULL || ctx == NULL) {
+        return;
+    }
 
     ctx->resolved = 1;
-    ngx_resolve_addr_done(rctx);
 
     /*
      * Reset request handling pipeline to make new variable 'rdns_result'
@@ -678,13 +839,13 @@ static void enable_code(ngx_http_script_engine_t * e) {
     }
 
     if (!ctx->resolved) {
-        ctx->enabled = code->enabled;
-        ctx->enable_source = NGX_HTTP_RDNS_CTX_ENABLE;
+        ctx->conf = code->conf;
+        ctx->conf_source = NGX_HTTP_RDNS_CONF_CTX;
 
-        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, e->request->connection->log, 0,
-                "rdns enable code, enabled = %d", ctx->enabled);
+        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, e->request->connection->log, 0,
+                "rdns enable code, enabled = %d, double mode = %d", ctx->conf.enabled, ctx->conf.double_mode);
 
-        if (ctx->enabled) {
+        if (ctx->conf.enabled) {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, e->request->connection->log, 0,
                     "rdns enable code, breaking codes");
 
@@ -702,18 +863,24 @@ static void enable_code(ngx_http_script_engine_t * e) {
 #endif
 
 
-static ngx_flag_t rdns_check_enabled(ngx_http_rdns_ctx_t * ctx, ngx_http_rdns_loc_conf_t * loc_cf) {
-    ngx_flag_t enabled = 0;
-
-    if (ctx == NULL) {
-        enabled = loc_cf->enabled;
-    } else if (ctx->enable_source == NGX_HTTP_RDNS_CONF_ENABLE) {
-        enabled = loc_cf->enabled;
-    } else if (ctx->enable_source == NGX_HTTP_RDNS_CTX_ENABLE) {
-        enabled = ctx->enabled;
+/*
+ * Module check enabled state as follows:
+ *  1. Check existence of request context.
+ *  2. If exists take enable from 'conf source',
+ *      take enabled from location config otherwise.
+ */
+static ngx_http_rdns_common_conf_t * rdns_get_common_conf(ngx_http_rdns_ctx_t * ctx, ngx_http_rdns_loc_conf_t * loc_cf) {
+    if (loc_cf == NULL) {
+        return NULL;
+    } else if (ctx == NULL) {
+        return &loc_cf->conf;
+    } else if (ctx->conf_source == NGX_HTTP_RDNS_CONF_CONF) {
+        return &loc_cf->conf;
+    } else if (ctx->conf_source == NGX_HTTP_RDNS_CONF_CTX) {
+        return &ctx->conf;
+    } else {
+        return NULL;
     }
-
-    return enabled;
 }
 
 
