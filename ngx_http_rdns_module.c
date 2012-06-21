@@ -103,18 +103,18 @@ typedef struct {
 } ngx_http_rdns_ctx_t;
 
 
-static ngx_int_t preconfig(ngx_conf_t * cf);
-static ngx_int_t postconfig(ngx_conf_t * cf);
-static void *    create_loc_conf(ngx_conf_t * cf);
-static char *    merge_loc_conf(ngx_conf_t * cf, void * parent, void * child);
-static char *    rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf);
-static ngx_int_t resolver_handler(ngx_http_request_t * r);
-static void      rdns_handler(ngx_resolver_ctx_t * ctx);
-static void      resolver_handler_finalize(ngx_http_request_t * r, ngx_http_rdns_ctx_t * ctx);
-static void      dns_request(ngx_http_request_t * r, ngx_str_t hostname);
-static void      dns_handler(ngx_resolver_ctx_t * ctx);
-static ngx_int_t var_rdns_result_getter(ngx_http_request_t * r, ngx_http_variable_value_t * v, uintptr_t data);
-static ngx_int_t var_set(ngx_http_request_t * r, ngx_int_t index, ngx_str_t value);
+static ngx_int_t                     preconfig(ngx_conf_t * cf);
+static ngx_int_t                     postconfig(ngx_conf_t * cf);
+static void *                        create_loc_conf(ngx_conf_t * cf);
+static char *                        merge_loc_conf(ngx_conf_t * cf, void * parent, void * child);
+static char *                        rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf);
+static ngx_int_t                     resolver_handler(ngx_http_request_t * r);
+static void                          rdns_handler(ngx_resolver_ctx_t * ctx);
+static void                          resolver_handler_finalize(ngx_http_request_t * r, ngx_http_rdns_ctx_t * ctx);
+static void                          dns_request(ngx_http_request_t * r, ngx_str_t hostname);
+static void                          dns_handler(ngx_resolver_ctx_t * ctx);
+static ngx_int_t                     var_rdns_result_getter(ngx_http_request_t * r, ngx_http_variable_value_t * v, uintptr_t data);
+static ngx_flag_t                    var_set(ngx_http_request_t * r, ngx_int_t index, ngx_str_t value);
 static ngx_http_rdns_ctx_t *         create_context(ngx_http_request_t * r);
 static ngx_http_rdns_common_conf_t * rdns_get_common_conf(ngx_http_rdns_ctx_t * ctx, ngx_http_rdns_loc_conf_t * loc_cf);
 
@@ -716,9 +716,9 @@ static void dns_request(ngx_http_request_t * r, ngx_str_t hostname) {
     rctx->data = r;
     rctx->timeout = core_loc_cf->resolver_timeout;
 
-    if (ngx_resolve_addr(rctx) != NGX_OK) {
+    if (ngx_resolve_name(rctx) != NGX_OK) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns: dns request: failed to make rdns request");
+                "rdns: dns request: failed to make dns request");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -819,16 +819,16 @@ static ngx_int_t var_rdns_result_getter(ngx_http_request_t * r,
 }
 
 
-static ngx_int_t var_set(ngx_http_request_t * r, ngx_int_t index, ngx_str_t value) {
+static ngx_flag_t var_set(ngx_http_request_t * r, ngx_int_t index, ngx_str_t value) {
     ngx_http_variable_value_t * val;
 
     if (r == NULL) {
-        return 1;
+        return 0;
     }
 
     val = r->variables + index;
     if (val == NULL) {
-        return 1;
+        return 0;
     }
 
     val->data = value.data;
@@ -836,7 +836,7 @@ static ngx_int_t var_set(ngx_http_request_t * r, ngx_int_t index, ngx_str_t valu
     val->valid = 1;
     val->not_found = 0;
 
-    return 0;
+    return 1;
 }
 
 
