@@ -114,6 +114,7 @@ static void      resolver_handler_finalize(ngx_http_request_t * r, ngx_http_rdns
 static void      dns_request(ngx_http_request_t * r, ngx_str_t hostname);
 static void      dns_handler(ngx_resolver_ctx_t * ctx);
 static ngx_int_t var_rdns_result_getter(ngx_http_request_t * r, ngx_http_variable_value_t * v, uintptr_t data);
+static ngx_int_t var_set(ngx_http_request_t * r, ngx_int_t index, ngx_str_t value);
 static ngx_http_rdns_ctx_t *         create_context(ngx_http_request_t * r);
 static ngx_http_rdns_common_conf_t * rdns_get_common_conf(ngx_http_rdns_ctx_t * ctx, ngx_http_rdns_loc_conf_t * loc_cf);
 
@@ -504,7 +505,7 @@ static ngx_int_t resolver_handler(ngx_http_request_t * r) {
 
         if (loc_cf == NULL) {
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns: resolver handler: failed to get rdns main config");
+                    "rdns: resolver handler: failed to get rdns location config");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
@@ -610,7 +611,6 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
     ngx_http_request_t * r = rctx->data;
     ngx_http_rdns_ctx_t * ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
     ngx_http_rdns_loc_conf_t * loc_cf;
-    ngx_http_variable_value_t * rdns_result_val;
     ngx_http_rdns_common_conf_t * cconf;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -626,15 +626,7 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
     loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_rdns_module);
     if (loc_cf == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns: reverse dns request handler: failed to get rdns main config");
-        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
-        return;
-    }
-
-    rdns_result_val = r->variables + loc_cf->rdns_result_index;
-    if (rdns_result_val == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns: reverse dns request handler: bad rdns_result variable");
+                "rdns: reverse dns request handler: failed to get rdns location config");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -644,24 +636,19 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
                 "rdns: reverse dns request handler: failed with error '%s'",
                 ngx_resolver_strerror(rctx->state));
 
-        rdns_result_val->data = var_rdns_result_not_found.data;
-        rdns_result_val->len = var_rdns_result_not_found.len;
-        rdns_result_val->valid = 1;
-        rdns_result_val->not_found = 0;
-
         ngx_resolve_addr_done(rctx);
-
+        var_set(r, loc_cf->rdns_result_index, var_rdns_result_not_found);
         resolver_handler_finalize(r, ctx);
     } else {
+        ngx_str_t hostname;
+
         ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                 "rdns: reverse dns request handler: result='%V'",
                 &rctx->name);
 
-        rdns_result_val->data = ngx_palloc(r->pool, rctx->name.len * sizeof(u_char));
-        ngx_memcpy(rdns_result_val->data, rctx->name.data, rctx->name.len);
-        rdns_result_val->len = rctx->name.len;
-        rdns_result_val->valid = 1;
-        rdns_result_val->not_found = 0;
+        hostname.data = ngx_palloc(r->pool, rctx->name.len * sizeof(u_char));
+        ngx_memcpy(hostname.data, rctx->name.data, rctx->name.len);
+        hostname.len = rctx->name.len;
 
         ngx_resolve_addr_done(rctx);
 
@@ -674,19 +661,16 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
         }
 
         if (cconf->double_mode) {
-            ngx_str_t hostname;
-
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                     "rdns: reverse dns request handler: double mode");
 
-            hostname.data = rdns_result_val->data;
-            hostname.len = rdns_result_val->len;
             dns_request(r, hostname);
         } else {
-                resolver_handler_finalize(r, ctx);
+            var_set(r, loc_cf->rdns_result_index, hostname);
+            resolver_handler_finalize(r, ctx);
 
-                ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                            "(DONE) rdns: reverse dns request handler");
+            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                        "(DONE) rdns: reverse dns request handler");
         }
     }
 }
@@ -746,15 +730,25 @@ static void dns_request(ngx_http_request_t * r, ngx_str_t hostname) {
 
 static void dns_handler(ngx_resolver_ctx_t * rctx) {;
     ngx_http_request_t * r = rctx->data;
-    ngx_http_rdns_ctx_t * ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
+    ngx_http_rdns_ctx_t * ctx;
+    ngx_http_rdns_loc_conf_t * loc_cf;
     struct sockaddr_in * sin;
 
-    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-            "rdns: dns request handler: '%V' -> '%d'", &rctx->name, rctx->addr);
+    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            "rdns: dns request handler");
 
+    ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
     if (ctx == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                 "rdns: dns request handler: failed to get request context");
+        ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
+        return;
+    }
+
+    loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_rdns_module);
+    if (loc_cf == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                "rdns: dns request handler: failed to get rdns location config");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -765,28 +759,29 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {;
                 ngx_resolver_strerror(rctx->state));
 
         ngx_resolve_name_done(rctx);
-        resolver_handler_finalize(r, ctx);
-        return;
+        var_set(r, loc_cf->rdns_result_index, var_rdns_result_not_found);
     } else {
+        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                "rdns: dns request handler: result = '%d'", rctx->addr);
+
         sin = (struct sockaddr_in *) r->connection->sockaddr;
         if (rctx->addr != sin->sin_addr.s_addr) {
             ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns: dns request handler: resolving inconsistency: '%d' -> '%V' -> '%d': terminating request",
+                    "rdns: dns request handler: resolving inconsistency: '%d' -> '%V' -> '%d'",
                     sin->sin_addr.s_addr, &rctx->name, rctx->addr);
 
             ngx_resolve_name_done(rctx);
-            /* No magic allowed */
-            ngx_http_finalize_request(r, NGX_HTTP_FORBIDDEN);
-            return;
+            var_set(r, loc_cf->rdns_result_index, var_rdns_result_not_found);
         } else {
+            var_set(r, loc_cf->rdns_result_index, rctx->name);
             ngx_resolve_name_done(rctx);
-
-            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "(DONE) rdns: dns request handler");
-
-            resolver_handler_finalize(r, ctx);
         }
     }
+
+    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            "(DONE) rdns: dns request handler");
+
+    resolver_handler_finalize(r, ctx);
 }
 
 
@@ -821,6 +816,27 @@ static ngx_int_t var_rdns_result_getter(ngx_http_request_t * r,
             &var_rdns_result_name, &var_rdns_result_uninitialized);
 
     return NGX_OK;
+}
+
+
+static ngx_int_t var_set(ngx_http_request_t * r, ngx_int_t index, ngx_str_t value) {
+    ngx_http_variable_value_t * val;
+
+    if (r == NULL) {
+        return 1;
+    }
+
+    val = r->variables + index;
+    if (val == NULL) {
+        return 1;
+    }
+
+    val->data = value.data;
+    val->len = value.len;
+    val->valid = 1;
+    val->not_found = 0;
+
+    return 0;
 }
 
 
