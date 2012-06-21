@@ -60,10 +60,10 @@ static const ngx_str_t var_rdns_result_uninitialized = ngx_string("-");
 static const ngx_str_t var_rdns_result_not_found = ngx_string("not found");
 
 
-typedef struct {
 #if (NGX_PCRE)
+
+typedef struct {
     ngx_http_regex_t * domain_regex;
-#endif
     ngx_str_t domain;
 
     enum {
@@ -73,10 +73,23 @@ typedef struct {
 } ngx_http_rdns_rule_t;
 
 
+static char *     rdns_allow_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf);
+static char *     rdns_deny_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf);
+static char *     rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, int access_type);
+static ngx_int_t  access_handler(ngx_http_request_t * r);
+static ngx_flag_t rule_is_match(ngx_http_request_t * r, ngx_http_rdns_rule_t * rule, ngx_str_t * domain);
+
+#endif
+
+
 typedef struct {
     ngx_int_t rdns_result_index;
     ngx_http_rdns_common_conf_t conf;
+
+#if (NGX_PCRE)
     ngx_array_t * rules;
+#endif
+
 } ngx_http_rdns_loc_conf_t;
 
 
@@ -95,20 +108,14 @@ static ngx_int_t postconfig(ngx_conf_t * cf);
 static void *    create_loc_conf(ngx_conf_t * cf);
 static char *    merge_loc_conf(ngx_conf_t * cf, void * parent, void * child);
 static char *    rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf);
-static char *    rdns_allow_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf);
-static char *    rdns_deny_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf);
-static char *    rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, int access_type);
 static ngx_int_t resolver_handler(ngx_http_request_t * r);
-static ngx_int_t access_handler(ngx_http_request_t * r);
 static void      rdns_handler(ngx_resolver_ctx_t * ctx);
 static void      resolver_handler_finalize(ngx_http_request_t * r, ngx_http_rdns_ctx_t * ctx);
 static void      dns_request(ngx_http_request_t * r, ngx_str_t hostname);
 static void      dns_handler(ngx_resolver_ctx_t * ctx);
 static ngx_int_t var_rdns_result_getter(ngx_http_request_t * r, ngx_http_variable_value_t * v, uintptr_t data);
-
 static ngx_http_rdns_ctx_t *         create_context(ngx_http_request_t * r);
 static ngx_http_rdns_common_conf_t * rdns_get_common_conf(ngx_http_rdns_ctx_t * ctx, ngx_http_rdns_loc_conf_t * loc_cf);
-static ngx_flag_t                    rule_is_match(ngx_http_request_t * r, ngx_http_rdns_rule_t * rule, ngx_str_t * domain);
 
 
 static ngx_command_t  ngx_http_rdns_commands[] = {
@@ -124,6 +131,7 @@ static ngx_command_t  ngx_http_rdns_commands[] = {
       0,
       NULL },
 
+#if (NGX_PCRE)
     { ngx_string("rdns_allow"),
       NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
       rdns_allow_directive,
@@ -137,6 +145,7 @@ static ngx_command_t  ngx_http_rdns_commands[] = {
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
       NULL },
+#endif
 
       ngx_null_command
 };
@@ -212,9 +221,11 @@ static char * merge_loc_conf(ngx_conf_t * cf, void * parent, void * child) {
     ngx_conf_merge_value(conf->rdns_result_index, prev->rdns_result_index,
             ngx_http_get_variable_index(cf, (ngx_str_t *)&var_rdns_result_name));
 
+#if (NGX_PCRE)
     if (conf->rules == NULL) {
         conf->rules = prev->rules;
     }
+#endif
 
     if (conf->conf.enabled && ((core_loc_cf->resolver == NULL) || (core_loc_cf->resolver->udp_connections.nelts == 0))) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "no core resolver defined for rdns");
@@ -270,7 +281,7 @@ static ngx_int_t postconfig(ngx_conf_t * cf) {
     }
     *(ngx_http_handler_pt *)arr->elts = resolver_handler;
 
-
+#if (NGX_PCRE)
     arr = &core_main_cf->phases[NGX_HTTP_ACCESS_PHASE].handlers;
     h = ngx_array_push(arr);
     if (h == NULL) {
@@ -279,6 +290,7 @@ static ngx_int_t postconfig(ngx_conf_t * cf) {
         return NGX_ERROR;
     }
     *h = access_handler;
+#endif
 
     debug("(DONE) postconfig");
 
@@ -367,10 +379,14 @@ static char * rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) 
 }
 
 
+#if (NGX_PCRE)
+
 static char * rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, int access_type) {
     ngx_http_rdns_loc_conf_t * loc_conf = conf;
     ngx_str_t * value;
     ngx_http_rdns_rule_t * rule;
+    ngx_regex_compile_t rc;
+    u_char errstr[NGX_MAX_CONF_ERRSTR];
 
     if (loc_conf == NULL) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
@@ -399,26 +415,18 @@ static char * rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, 
     rule->access_type = access_type;
     rule->domain = value[1];
 
-#if (NGX_PCRE)
-    {
-        ngx_regex_compile_t rc;
-        u_char errstr[NGX_MAX_CONF_ERRSTR];
+    ngx_memzero(&rc, sizeof(ngx_regex_compile_t));
 
-        ngx_memzero(&rc, sizeof(ngx_regex_compile_t));
+    rc.pattern = rule->domain;
+    rc.err.len = NGX_MAX_CONF_ERRSTR;
+    rc.err.data = errstr;
+    rc.options = NGX_REGEX_CASELESS;
 
-        rc.pattern = rule->domain;
-        rc.err.len = NGX_MAX_CONF_ERRSTR;
-        rc.err.data = errstr;
-        rc.options = NGX_REGEX_CASELESS;
-
-        rule->domain_regex = ngx_http_regex_compile(cf, &rc);
-        if (rule->domain_regex == NULL) {
-            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
-            debug("unable to compile rule regex");
-            return NGX_CONF_ERROR;
-        }
+    rule->domain_regex = ngx_http_regex_compile(cf, &rc);
+    if (rule->domain_regex == NULL) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "unable to compile rule regex");
+        return NGX_CONF_ERROR;
     }
-#endif
 
     debug_code(
         char domain_buf[rule->domain.len + 1];
@@ -451,6 +459,8 @@ static char * rdns_deny_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * c
 
     return res;
 }
+
+#endif
 
 
 static ngx_int_t resolver_handler(ngx_http_request_t * r) {
@@ -540,6 +550,8 @@ static ngx_int_t resolver_handler(ngx_http_request_t * r) {
 }
 
 
+#if (NGX_PCRE)
+
 static ngx_int_t access_handler(ngx_http_request_t * r) {
     ngx_http_rdns_loc_conf_t * loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_rdns_module);
     ngx_http_rdns_ctx_t * ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
@@ -590,6 +602,8 @@ static ngx_int_t access_handler(ngx_http_request_t * r) {
 
     return NGX_OK;
 }
+
+#endif
 
 
 static void rdns_handler(ngx_resolver_ctx_t * rctx) {
@@ -867,7 +881,7 @@ static void enable_code(ngx_http_script_engine_t * e) {
  * Module check enabled state as follows:
  *  1. Check existence of request context.
  *  2. If exists take enable from 'conf source',
- *      take enabled from location config otherwise.
+ *      take enable from location config otherwise.
  */
 static ngx_http_rdns_common_conf_t * rdns_get_common_conf(ngx_http_rdns_ctx_t * ctx, ngx_http_rdns_loc_conf_t * loc_cf) {
     if (loc_cf == NULL) {
@@ -884,6 +898,8 @@ static ngx_http_rdns_common_conf_t * rdns_get_common_conf(ngx_http_rdns_ctx_t * 
 }
 
 
+#if (NGX_PCRE)
+
 static ngx_flag_t rule_is_match(ngx_http_request_t * r, ngx_http_rdns_rule_t * rule, ngx_str_t * domain) {
     ngx_flag_t res;
 
@@ -891,17 +907,12 @@ static ngx_flag_t rule_is_match(ngx_http_request_t * r, ngx_http_rdns_rule_t * r
         return 0;
     }
 
-#if (NGX_PCRE)
     res = (ngx_http_regex_exec(r, rule->domain_regex, domain) == NGX_OK);
     ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                 "rdns check rule regex '%V' with '%V': %s", &rule->domain, domain,
                 (res == 1 ? "matched" : "not matched"));
-#else
-    res = (ngx_memn2cmp(rule->domain.data, domain->data, rule->domain.len, domain->len) == 0);
-    ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns check rule '%V' with '%V': %s", &rule->domain, domain,
-                (res == 1 ? "matched" : "not matched"));
-#endif
 
     return res;
 }
+
+#endif
