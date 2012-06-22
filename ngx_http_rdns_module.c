@@ -537,13 +537,9 @@ static ngx_int_t resolver_handler(ngx_http_request_t * r) {
         rctx->timeout = core_loc_cf->resolver_timeout;
 
         if (ngx_resolve_addr(rctx) != NGX_OK) {
-            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns: resolver handler: failed to make rdns request");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "(DONE) rdns: resolver handler");
         return NGX_DONE;
     } else {
         return NGX_DECLINED;
@@ -667,10 +663,11 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
             dns_request(r, hostname);
         } else {
             var_set(r, loc_cf->rdns_result_index, hostname);
-            resolver_handler_finalize(r, ctx);
 
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                         "(DONE) rdns: reverse dns request handler");
+
+            resolver_handler_finalize(r, ctx);
         }
     }
 }
@@ -717,14 +714,9 @@ static void dns_request(ngx_http_request_t * r, ngx_str_t hostname) {
     rctx->timeout = core_loc_cf->resolver_timeout;
 
     if (ngx_resolve_name(rctx) != NGX_OK) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                "rdns: dns request: failed to make dns request");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
-
-    ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-            "(DONE) rdns: dns request");
 }
 
 
