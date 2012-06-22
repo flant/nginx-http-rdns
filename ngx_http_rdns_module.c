@@ -494,7 +494,7 @@ static ngx_int_t resolver_handler(ngx_http_request_t * r) {
             /* Context needed because of ctx->resolved flag */
             ctx = create_context(r);
             if (ctx == NULL) {
-                ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                         "rdns: resolver handler: unable to create request context");
                 return NGX_HTTP_INTERNAL_SERVER_ERROR;
             }
@@ -504,27 +504,27 @@ static ngx_int_t resolver_handler(ngx_http_request_t * r) {
         }
 
         if (loc_cf == NULL) {
-            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                     "rdns: resolver handler: failed to get rdns location config");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         core_loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
         if (core_loc_cf == NULL) {
-            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                     "rdns: resolver handler: failed to get core location config");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         rctx = ngx_resolve_start(core_loc_cf->resolver, NULL);
         if (rctx == NULL) {
-            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                     "rdns: resolver handler: unable to create resolver context");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
         if (rctx == NGX_NO_RESOLVER) {
-            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                     "rdns: resolver handler: core resolver is not defined");
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
@@ -613,7 +613,7 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
             "rdns: reverse dns request handler");
 
     if (ctx == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: reverse dns request handler: failed to get request context");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
@@ -621,14 +621,14 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
 
     loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_rdns_module);
     if (loc_cf == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: reverse dns request handler: failed to get rdns location config");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
 
     if (rctx->state) {
-        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug1(NGX_LOG_INFO, r->connection->log, 0,
                 "rdns: reverse dns request handler: failed with error '%s'",
                 ngx_resolver_strerror(rctx->state));
 
@@ -650,7 +650,7 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
 
         cconf = rdns_get_common_conf(ctx, loc_cf);
         if (cconf == NULL) {
-            ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                     "rdns: reverse dns request handler: failed to get common config");
             ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
             return;
@@ -662,6 +662,10 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
 
             dns_request(r, hostname);
         } else {
+            ngx_log_debug1(NGX_LOG_INFO, r->connection->log, 0,
+                    "rdns: reverse dns request handler: resolved to '%V'",
+                    &hostname);
+
             var_set(r, loc_cf->rdns_result_index, hostname);
 
             ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -686,7 +690,7 @@ static void dns_request(ngx_http_request_t * r, ngx_str_t hostname) {
 
     core_loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
     if (core_loc_cf == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rnds: dns request: failed to get core location config");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
@@ -694,14 +698,14 @@ static void dns_request(ngx_http_request_t * r, ngx_str_t hostname) {
 
     rctx = ngx_resolve_start(core_loc_cf->resolver, NULL);
     if (rctx == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: dns request: unable to create resolver context");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
 
     if (rctx == NGX_NO_RESOLVER) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: dns request: core resolver is not defined");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
@@ -731,7 +735,7 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {;
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
     if (ctx == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: dns request handler: failed to get request context");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
@@ -739,14 +743,14 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {;
 
     loc_cf = ngx_http_get_module_loc_conf(r, ngx_http_rdns_module);
     if (loc_cf == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: dns request handler: failed to get rdns location config");
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
 
     if (rctx->state) {
-        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+        ngx_log_debug1(NGX_LOG_INFO, r->connection->log, 0,
                 "rdns: dns request handler: failed with error '%s'",
                 ngx_resolver_strerror(rctx->state));
 
@@ -758,13 +762,17 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {;
 
         sin = (struct sockaddr_in *) r->connection->sockaddr;
         if (rctx->addr != sin->sin_addr.s_addr) {
-            ngx_log_debug3(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+            ngx_log_debug3(NGX_LOG_INFO, r->connection->log, 0,
                     "rdns: dns request handler: resolving inconsistency: '%d' -> '%V' -> '%d'",
                     sin->sin_addr.s_addr, &rctx->name, rctx->addr);
 
             ngx_resolve_name_done(rctx);
             var_set(r, loc_cf->rdns_result_index, var_rdns_result_not_found);
         } else {
+            ngx_log_debug1(NGX_LOG_INFO, r->connection->log, 0,
+                    "rdns: dns request handler: resolved to '%V'",
+                    &rctx->name);
+
             var_set(r, loc_cf->rdns_result_index, rctx->name);
             ngx_resolve_name_done(rctx);
         }
