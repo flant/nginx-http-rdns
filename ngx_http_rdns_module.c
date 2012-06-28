@@ -875,6 +875,8 @@ static void enable_code(ngx_http_script_engine_t * e) {
     if (ctx == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, e->request->connection->log, 0,
                 "rdns enable code: unable to get request context");
+
+        e->ip += sizeof(ngx_http_rdns_enable_code_t);
         return;
     }
 
