@@ -92,5 +92,3 @@ rdns_deny
 
     Directive forbids access for the domain matched with given regular expression.
 
-Notes
-todo: core resolver
