@@ -45,22 +45,6 @@ rdns
     After performing lookup module restarts request handling pipeline to make new $rdns_hostname
     variable value visible to other directives.
 
-    Notice
-    During restart location is again determined for uri. If rdns enabled at http or server
-    level, there may be cycle when performing redirection from some location to named location.
-    For example:
-    server {
-        rdns on;
-
-        location / {
-            echo_exec @foo;
-        }
-
-        location @foo {
-            #...
-        }
-    }
-
     Server/location if
     Internally under server or location if module works through rewrite module codes.
     When enable directive (rdns on|double) executed first time - it enables lookup
@@ -92,3 +76,38 @@ rdns_deny
 
     Directive forbids access for the domain matched with given regular expression.
 
+
+Notice
+    During request handling pipeline restart location is again determined for uri. If rdns enabled at
+http or server level, there may be cycle when performing redirection from some location
+to named location. For example:
+server {
+    rdns_deny somedomain;
+    rdns on;
+
+    location / {
+        echo_exec @foo;
+    }
+
+    location @foo {
+        #...
+    }
+}
+
+Correct config should be:
+server {
+    rdns_deny somedomain;
+    rdns on;
+
+    location / {
+        echo_exec @foo;
+    }
+
+    location @foo {
+        rdns off;
+        #...
+    }
+}
+
+    Directives rdns_allow and rdns_deny defines new access list for context in which they are used.
+Access list inheritance in contexts works only if child context doesn't define own rules.
