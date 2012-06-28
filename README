@@ -1,0 +1,96 @@
+Synopsis
+    This module allows to make reverse dns lookup for incoming connection
+and provides simple access control of incoming hostname by allow/deny rules
+(similar to HttpAccessModule allow/deny directives, with regular expressions support).
+Core module resolver should be defined to use this module.
+
+Example:
+location / {
+    resolver 127.0.0.1;
+
+    rdns_deny badone\.example\.com;
+
+    if ($http_user_agent ~* FooAgent) {
+        rdns on;
+    }
+
+    if ($rdns_hostname ~* (foo\.example\.com)) {
+        set $myvar foo;
+    }
+
+    #...
+}
+
+    In the example above for each request with user agent FooAgent nginx will make reverse
+dns request through dns server on 127.0.0.1. Requests from badone.example.com will be forbidden.
+For requests from FooAgent variable $rdns_hostname contains rdns request result or "not found"
+if not found or error occured. For other user agents $rdns_hostname contains special value "-".
+
+
+Directives
+
+rdns
+    Syntax: rdns on | off | double
+    Default: -
+    Context: http, server, location, if-in-server, if-in-location
+    Phase: rewrite
+    Variables: rdns_hostname
+
+    Directive enables/disables rdns lookups.
+    Variable rdns_hostname may contain following values:
+        - lookup result;
+        - special value "not found" if not found or error occured during request;
+        - special value "-" if lookup disabled.
+
+    After performing lookup module restarts request handling pipeline to make new $rdns_hostname
+    variable value visible to other directives.
+
+    Notice
+    During restart location is again determined for uri. If rdns enabled at http or server
+    level, there may be cycle when performing redirection from some location to named location.
+    For example:
+    server {
+        rdns on;
+
+        location / {
+            echo_exec @foo;
+        }
+
+        location @foo {
+            #...
+        }
+    }
+
+    Server/location if
+    Internally under server or location if module works through rewrite module codes.
+    When enable directive (rdns on|double) executed first time - it enables lookup
+    and then performs break, so none of the further directives under if executed.
+    After performing lookup directive under if executed second time - and now it doesn't performs
+    break. Disable directive never performs break.
+
+    on     - enable rdns lookup in this context.
+    double - enable double rdns lookup in this context. If rdns request was succeeded module
+             performs forward lookup on result. If none of the forward lookup IP addresses
+             match the original address, $rdns_hostname sets to "not found".
+    off    - disable rdns lookup in this context.
+
+rdns_allow
+    Syntax: rdns_allow regex
+    Default: -
+    Context: http, server, location
+    Phase: access
+    Variables: -
+
+    Directive grants access for the domain matched with given regular expression.
+
+rdns_deny
+    Syntax: rdns_deny regex
+    Default: -
+    Context: http, server, location
+    Phase: access
+    Variables: -
+
+    Directive forbids access for the domain matched with given regular expression.
+
+Notes
+todo: core resolver
