@@ -2,7 +2,7 @@ Synopsis
     This module allows to make reverse dns lookup for incoming connection
 and provides simple access control of incoming hostname by allow/deny rules
 (similar to HttpAccessModule allow/deny directives, with regular expressions support).
-Core module resolver should be defined to use this module.
+Module uses resolver defined with resolver directive.
 
 Example:
 location / {
@@ -57,6 +57,8 @@ rdns
              performs forward lookup on result. If none of the forward lookup IP addresses
              match the original address, $rdns_hostname sets to "not found".
     off    - disable rdns lookup in this context.
+
+    Core module resolver should be defined to use this directive.
 
 rdns_allow
     Syntax: rdns_allow regex
