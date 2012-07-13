@@ -38,67 +38,83 @@ will have a special value "-".
 
 ## Directives
 
-rdns
-    Syntax: rdns on | off | double
-    Default: -
-    Context: http, server, location, if-in-server, if-in-location
-    Phase: rewrite
-    Variables: rdns_hostname
+### rdns
 
-    Enables/disables rDNS lookups.
-    The $rdns_hostname variable may contain:
-        - lookup result;
-        - special value "not found" if not found or error occured
-          during request;
-        - special value "-" if lookup disabled.
+* Syntax: rdns on | off | double
+* Default: -
+* Context: http, server, location, if-in-server, if-in-location
+* Phase: rewrite
+* Variables: rdns_hostname
 
-    After performing a lookup, module restarts request handling
-    pipeline to make new $rdns_hostname variable value visible
-    to other directives.
+Enables/disables rDNS lookups.
 
-    Server/location "if"
-    Internally, in server's or location's "if", module works
-    through rewrite module codes. When any enabling directive
-    (rdns on|double) is executed for the first time, it enables
-    lookup and makes a break to stop executing further directives
-    in this "if". After the lookup is done, directive in "if" is
-    executed for the second time, without any breaks. Disabling
-    directive (rdns off) makes no breaks.
+* on     - enable rDNS lookup in this context.
+* double - enable double rDNS lookup in this context. If the first
+           rDNS request succeeded, module performs a forward lookup
+           for its result. If none of the forward lookup IP
+           addresses match the original address, $rdns_hostname is
+           set to "not found".
+* off    - disable rDNS lookup in this context.
 
-    on     - enable rDNS lookup in this context.
-    double - enable double rDNS lookup in this context. If the
-             first rDNS request succeeded, module performs a
-             forward lookup for its result. If none of the forward
-             lookup IP addresses match the original address,
-             $rdns_hostname is set to "not found".
-    off    - disable rDNS lookup in this context.
+The $rdns_hostname variable may have:
 
-    Core module resolver should be defined to use this directive.
+* result of lookup;
+* special value "not found" if not found or error occurred during
+  request;
+* special value "-" if lookup disabled.
 
-rdns_allow
-    Syntax: rdns_allow regex
-    Default: -
-    Context: http, server, location
-    Phase: access
-    Variables: -
+After performing a lookup, module restarts request handling pipeline
+to make new $rdns_hostname variable value visible to other directives.
 
-    Grants access for domain matched by regular expression.
+Notice on server/location "if":
 
-rdns_deny
-    Syntax: rdns_deny regex
-    Default: -
-    Context: http, server, location
-    Phase: access
-    Variables: -
+Internally, in server's or location's "if", module works through
+rewrite module codes. When any enabling directive (rdns on|double) is
+executed for the first time, it enables lookup and makes a break to
+stop executing further directives in this "if". After the lookup is
+done, directive in "if" is executed for the second time, without any
+breaks. Disabling directive (rdns off) makes no breaks.
 
-    Forbids access for domain matched by regular expression.
+Core module resolver should be defined to use this directive.
 
 
-## Notice
-    During request handling pipeline restart, the location is
-    determined for URI. If rDNS is enabled at the http or server
-    level, performing redirection from some location to a named
-    location may invoke a loop. For example:
+### rdns_allow
+
+* Syntax: rdns_allow regex
+* Default: -
+* Context: http, server, location
+* Phase: access
+* Variables: -
+
+Grants access for domain matched by regular expression.
+
+
+### rdns_deny
+
+* Syntax: rdns_deny regex
+* Default: -
+* Context: http, server, location
+* Phase: access
+* Variables: -
+
+Forbids access for domain matched by regular expression.
+
+
+## Notice on access lists
+
+The rdns_allow and rdns_deny directives define a new access list for
+the context in which they are used.
+
+Access list inheritance in contexts works only if child context
+doesn't define own rules.
+
+
+## Warning on named locations
+
+During request handling pipeline restart, the location is determined
+for URI. If rDNS is enabled at the http or server level, performing
+redirection from some location to a named location may invoke a loop.
+For example:
 
     server {
         rdns_deny somedomain;
@@ -113,7 +129,7 @@ rdns_deny
         }
     }
 
-    The correct config for this example should be as follows:
+The correct config for this example should be as follows:
 
     server {
         rdns_deny somedomain;
@@ -129,17 +145,11 @@ rdns_deny
         }
     }
 
-    The rdns_allow and rdns_deny directives define a new
-    access list for the context in which they are used.
-
-    Access list inheritance in contexts works only if
-    child context doesn't define own rules.
-
 
 ## Authors
 
-The original version of this module has been written by
-Timofey Kirillov <timofey.kirillov@flant.ru>, CJSC Flant.
+The original version of this module has been written by Timofey Kirillov,
+CJSC Flant.
 
 
 ## Links
@@ -148,3 +158,4 @@ Timofey Kirillov <timofey.kirillov@flant.ru>, CJSC Flant.
   http://flant.ru/projects/nginx-http-rdns
 * The source code on GitHub:
   https://github.com/flant/nginx-http-rdns
+
