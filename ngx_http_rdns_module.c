@@ -1,3 +1,9 @@
+
+/*
+ * Copyright (C) 2012 Timofey Kirillov
+ * Copyright (C) 2012 CJSC Flant
+ */
+
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
