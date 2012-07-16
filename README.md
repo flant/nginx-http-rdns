@@ -49,11 +49,12 @@ will have a special value "-".
 Enables/disables rDNS lookups.
 
 * on     - enable rDNS lookup in this context.
-* double - enable double rDNS lookup in this context. If the first
-           rDNS request succeeded, module performs a forward lookup
-           for its result. If none of the forward lookup IP
-           addresses match the original address, $rdns_hostname is
-           set to "not found".
+* double - enable double DNS lookup in this context. If the reverse
+           lookup (rDNS request) succeeded, module performs a forward
+           lookup (DNS request) for its result. If this forward
+           lookup has failed or none of the forward lookup IP
+           addresses have matched the original address,
+           $rdns_hostname is set to "not found".
 * off    - disable rDNS lookup in this context.
 
 The $rdns_hostname variable may have:
@@ -70,10 +71,11 @@ Notice on server/location "if":
 
 Internally, in server's or location's "if", module works through
 rewrite module codes. When any enabling directive (rdns on|double) is
-executed for the first time, it enables lookup and makes a break to
-stop executing further directives in this "if". After the lookup is
-done, directive in "if" is executed for the second time, without any
-breaks. Disabling directive (rdns off) makes no breaks.
+executed for the first time, it enables DNS lookup and makes a break
+(to prevent executing further directives in this "if"). After the
+lookup is done, directives in "if" using rewrite module codes are
+executed for the second time, without any breaks. Disabling directive
+(rdns off) makes no breaks.
 
 Core module resolver should be defined to use this directive.
 
@@ -111,13 +113,10 @@ doesn't define own rules.
 
 ## Warning on named locations
 
-During request handling pipeline restart, the location is determined
-for URI. If rDNS is enabled at the http or server level, performing
-redirection from some location to a named location may invoke a loop.
-For example:
+Making rDNS requests in named locations isn't supported and may
+invoke a loop. For example:
 
     server {
-        rdns_deny somedomain;
         rdns on;
 
         location / {
@@ -129,10 +128,13 @@ For example:
         }
     }
 
-The correct config for this example should be as follows:
+Being in a named location and restarting request handling pipeline,
+nginx continue its request handling in usual (unnamed) location.
+That's why this example will make a loop if you don't disable the
+module in your named location. The correct config for this example
+should be as follows:
 
     server {
-        rdns_deny somedomain;
         rdns on;
 
         location / {
@@ -158,4 +160,3 @@ CJSC Flant.
   http://flant.ru/projects/nginx-http-rdns
 * The source code on GitHub:
   https://github.com/flant/nginx-http-rdns
-
