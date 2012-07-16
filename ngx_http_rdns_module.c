@@ -23,22 +23,6 @@
  */
 
 
-#if (NGX_DEBUG)
-
-#include <stdio.h>
-
-#define debug(...) { fprintf(stderr, "nginx: [debug] rdns: "); \
-                     fprintf(stderr, __VA_ARGS__); \
-                     fprintf(stderr, "\n"); }
-
-#define debug_code(...) { __VA_ARGS__; }
-
-#else
-#define debug(...)
-#define debug_code(...)
-#endif
-
-
 typedef struct {
     ngx_flag_t enabled;
     ngx_flag_t double_mode;
@@ -192,7 +176,7 @@ ngx_module_t  ngx_http_rdns_module = {
 static void * create_loc_conf(ngx_conf_t * cf) {
     ngx_http_rdns_loc_conf_t * conf;
 
-    debug("creating location conf");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "creating location conf");
 
     conf = ngx_palloc(cf->pool, sizeof(ngx_http_rdns_loc_conf_t));
     if (conf != NULL) {
@@ -201,14 +185,7 @@ static void * create_loc_conf(ngx_conf_t * cf) {
         conf->rdns_result_index = NGX_CONF_UNSET;
     }
 
-    debug_code(
-            char filename_buf[cf->conf_file->file.name.len + 1];
-            ngx_memcpy(filename_buf, cf->conf_file->file.name.data, cf->conf_file->file.name.len);
-            filename_buf[cf->conf_file->file.name.len] = '\0';
-
-            debug("(DONE) creating location conf = %p in %s:%lu",
-                    conf, filename_buf, cf->conf_file->line);
-    );
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "(DONE) creating location conf = %p");
 
     return conf;
 }
@@ -219,7 +196,7 @@ static char * merge_loc_conf(ngx_conf_t * cf, void * parent, void * child) {
     ngx_http_rdns_loc_conf_t * conf = child;
     ngx_http_core_loc_conf_t * core_loc_cf;
 
-    debug("merging location configs: %p -> %p", prev, conf);
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "merging location configs: %p -> %p", prev, conf);
 
     core_loc_cf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
 
@@ -239,7 +216,7 @@ static char * merge_loc_conf(ngx_conf_t * cf, void * parent, void * child) {
         return NGX_CONF_ERROR;
     }
 
-    debug("(DONE) merging location configs");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "(DONE) merging location configs");
 
     return NGX_CONF_OK;
 }
@@ -248,7 +225,7 @@ static char * merge_loc_conf(ngx_conf_t * cf, void * parent, void * child) {
 static ngx_int_t preconfig(ngx_conf_t * cf) {
     ngx_http_variable_t * var;
 
-    debug("preconfig");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "preconfig");
 
     var = ngx_http_add_variable(cf, (ngx_str_t *)&var_rdns_result_name, NGX_HTTP_VAR_CHANGEABLE);
     if (var == NULL) {
@@ -256,7 +233,7 @@ static ngx_int_t preconfig(ngx_conf_t * cf) {
     }
     var->get_handler = var_rdns_result_getter;
 
-    debug("(DONE) preconfig");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "(DONE) preconfig");
 
     return NGX_OK;
 }
@@ -268,14 +245,14 @@ static ngx_int_t postconfig(ngx_conf_t * cf) {
     ngx_array_t * arr;
     int i;
 
-    debug("postconfig");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "postconfig");
 
     core_main_cf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
     arr = &core_main_cf->phases[NGX_HTTP_REWRITE_PHASE].handlers;
     h = ngx_array_push(arr);
     if (h == NULL) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
-        debug("unable to setup rewrite phase resolver handler");
+        ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "unable to setup rewrite phase resolver handler");
         return NGX_ERROR;
     }
 
@@ -293,13 +270,13 @@ static ngx_int_t postconfig(ngx_conf_t * cf) {
     h = ngx_array_push(arr);
     if (h == NULL) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
-        debug("unable to setup access phase handler");
+        ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "unable to setup access phase handler");
         return NGX_ERROR;
     }
     *h = access_handler;
 #endif
 
-    debug("(DONE) postconfig");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "(DONE) postconfig");
 
     return NGX_OK;
 }
@@ -316,11 +293,11 @@ static char * rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) 
     ngx_str_t * value;
     ngx_http_rdns_common_conf_t cconf;
 
-    debug("rdns directive");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "rdns directive");
 
     if (loc_conf == NULL) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
-        debug("location config NULL pointer");
+        ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "location config NULL pointer");
         return NGX_CONF_ERROR;
     }
 
@@ -355,17 +332,19 @@ static char * rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) 
          * Enable code should run only if directive used inside 'if'.
          */
 
-        debug("setup enable code");
+        ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "setup enable code");
         rewrite_lcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_rewrite_module);
         if (rewrite_lcf == NULL) {
-            debug("unable to get rewrite location config");
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
+            ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "unable to get rewrite location config");
             return NGX_CONF_ERROR;
         }
 
         code = ngx_http_script_start_code(cf->pool, (ngx_array_t **)rewrite_lcf,
                                                sizeof(ngx_http_rdns_enable_code_t));
         if (code == NULL) {
-            debug("unable to add enable code to rewrite module");
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
+            ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "unable to add enable code to rewrite module");
             return NGX_CONF_ERROR;
         }
 
@@ -380,7 +359,8 @@ static char * rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) 
     }
 #endif
 
-    debug("(DONE) rdns directive: enabled = %lu, double_mode = %lu", cconf.enabled, cconf.double_mode);
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "(DONE) rdns directive: enabled = %lu, double_mode = %lu",
+            cconf.enabled, cconf.double_mode);
 
     return NGX_CONF_OK;
 }
@@ -397,7 +377,7 @@ static char * rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, 
 
     if (loc_conf == NULL) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
-        debug("location config NULL pointer");
+        ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "location config NULL pointer");
         return NGX_CONF_ERROR;
     }
 
@@ -407,7 +387,7 @@ static char * rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, 
         loc_conf->rules = ngx_array_create(cf->pool, 1, sizeof(ngx_http_rdns_rule_t));
         if (loc_conf->rules == NULL) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
-            debug("unable to allocate memory for rules array");
+            ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "unable to allocate memory for rules array");
             return NGX_CONF_ERROR;
         }
     }
@@ -415,7 +395,7 @@ static char * rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, 
     rule = ngx_array_push(loc_conf->rules);
     if (rule == NULL) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "internal error");
-        debug("unable to allocate memory for rule");
+        ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "unable to allocate memory for rule");
         return NGX_CONF_ERROR;
     }
 
@@ -435,12 +415,7 @@ static char * rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, 
         return NGX_CONF_ERROR;
     }
 
-    debug_code(
-        char domain_buf[rule->domain.len + 1];
-        ngx_memcpy(domain_buf, rule->domain.data, rule->domain.len);
-        domain_buf[rule->domain.len] = '\0';
-        debug("rule for domain '%s'", domain_buf);
-    );
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "using rule '%V'", &rule->domain);
 
     return NGX_CONF_OK;
 }
@@ -449,9 +424,9 @@ static char * rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, 
 static char * rdns_allow_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) {
     char * res;
 
-    debug("rdns allow directive");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "rdns allow directive");
     res = rdns_conf_rule(cf, cmd, conf, NGX_HTTP_RDNS_RULE_ALLOW);
-    debug("(DONE) rdns allow directive");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "(DONE) rdns allow directive");
 
     return res;
 }
@@ -460,9 +435,9 @@ static char * rdns_allow_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * 
 static char * rdns_deny_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) {
     char * res;
 
-    debug("rdns deny directive");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "rdns deny directive");
     res = rdns_conf_rule(cf, cmd, conf, NGX_HTTP_RDNS_RULE_DENY);
-    debug("(DONE) rdns deny directive");
+    ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "(DONE) rdns deny directive");
 
     return res;
 }
