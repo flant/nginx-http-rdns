@@ -596,6 +596,7 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
     if (ctx == NULL) {
         ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: reverse dns request handler: failed to get request context");
+        ngx_resolve_addr_done(rctx);
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -604,6 +605,7 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
     if (loc_cf == NULL) {
         ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: reverse dns request handler: failed to get rdns location config");
+        ngx_resolve_addr_done(rctx);
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -718,6 +720,7 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {;
     if (ctx == NULL) {
         ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: dns request handler: failed to get request context");
+        ngx_resolve_name_done(rctx);
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
@@ -726,6 +729,7 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {;
     if (loc_cf == NULL) {
         ngx_log_debug0(NGX_LOG_ERR, r->connection->log, 0,
                 "rdns: dns request handler: failed to get rdns location config");
+        ngx_resolve_name_done(rctx);
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return;
     }
