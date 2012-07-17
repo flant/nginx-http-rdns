@@ -178,7 +178,7 @@ static void * create_loc_conf(ngx_conf_t * cf) {
 
     ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "creating location conf");
 
-    conf = ngx_palloc(cf->pool, sizeof(ngx_http_rdns_loc_conf_t));
+    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_rdns_loc_conf_t));
     if (conf != NULL) {
         conf->conf.enabled = NGX_CONF_UNSET;
         conf->conf.double_mode = NGX_CONF_UNSET;
@@ -625,7 +625,7 @@ static void rdns_handler(ngx_resolver_ctx_t * rctx) {
                 "rdns: reverse dns request handler: result='%V'",
                 &rctx->name);
 
-        hostname.data = ngx_palloc(r->pool, rctx->name.len * sizeof(u_char));
+        hostname.data = ngx_pcalloc(r->pool, rctx->name.len * sizeof(u_char));
         ngx_memcpy(hostname.data, rctx->name.data, rctx->name.len);
         hostname.len = rctx->name.len;
 
