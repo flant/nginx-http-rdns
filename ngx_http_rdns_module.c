@@ -18,7 +18,6 @@
  *   1. valid, if valid resolver option set;
  *   2. ttl from dns answer.
  * Cache cleared by 2 records in the end of every query.
- * 300,000 queries from different ip's in 30s take ~50Mb cache.
  */
 
 
