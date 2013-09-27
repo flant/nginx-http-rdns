@@ -1,5 +1,6 @@
 
 /*
+ * Copyright (C) 2012-2013 Dmitry Stolyarov
  * Copyright (C) 2012-2013 Timofey Kirillov
  * Copyright (C) 2012-2013 CJSC Flant (flant.com)
  */
