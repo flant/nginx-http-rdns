@@ -705,7 +705,7 @@ static void dns_request(ngx_http_request_t * r, ngx_str_t hostname) {
 }
 
 
-static void dns_handler(ngx_resolver_ctx_t * rctx) {;
+static void dns_handler(ngx_resolver_ctx_t * rctx) {
     ngx_http_request_t * r = rctx->data;
     ngx_http_rdns_ctx_t * ctx;
     ngx_http_rdns_loc_conf_t * loc_cf;
