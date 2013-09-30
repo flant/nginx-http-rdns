@@ -1,7 +1,8 @@
 
 /*
- * Copyright (C) 2012 Timofey Kirillov
- * Copyright (C) 2012 CJSC Flant
+ * Copyright (C) 2012-2013 Dmitry Stolyarov
+ * Copyright (C) 2012-2013 Timofey Kirillov
+ * Copyright (C) 2012-2013 CJSC Flant (flant.com)
  */
 
 #include <ngx_config.h>
@@ -12,11 +13,11 @@
 /*********************************
  *** Nginx core resolver notes ***
  *********************************
- * 1 cache record takes ~ 150bytes.
- * Cache maximum expired time is always 30s.
+ * 1 cache record takes ~ 150 bytes.
+ * Cache maximum expired time is always 30 s.
  * Cache minimum expired time taken from:
- *   1. valid, if valid resolver option set;
- *   2. ttl from dns answer.
+ *   1. valid if valid resolver option set;
+ *   2. TTL from DNS answer.
  * Cache cleared by 2 records in the end of every query.
  */
 
@@ -141,8 +142,8 @@ static ngx_command_t  ngx_http_rdns_commands[] = {
 
 
 static ngx_http_module_t  ngx_http_rdns_module_ctx = {
-    preconfig,         /* preconfiguration */
-    postconfig,        /* postconfiguration */
+    preconfig,         /* pre-configuration */
+    postconfig,        /* post-configuration */
 
     NULL,              /* create main configuration */
     NULL,              /* init main configuration */
@@ -256,7 +257,7 @@ static ngx_int_t postconfig(ngx_conf_t * cf) {
 
     /* Enable code running on REWRITE phase.
      * Enable code should run before rdns phase_handler.
-     * So we add phase_handler as last handler in REWRITE phase.
+     * So, we add phase_handler as the last handler in REWRITE phase.
      */
     for (i = arr->nelts - 1; i > 0; --i) {
         *((ngx_http_handler_pt *)arr->elts + i) = *((ngx_http_handler_pt *)arr->elts + i - 1);
@@ -327,7 +328,7 @@ static char * rdns_directive(ngx_conf_t * cf, ngx_command_t * cmd, void * conf) 
 
         /*
          * Enable code used to determine enabled state in runtime (when processing request).
-         * Enable code should run only if directive used inside 'if'.
+         * Enable code should run only in case directive is used inside 'if'.
          */
 
         ngx_conf_log_error(NGX_LOG_DEBUG, cf, 0, "setup enable code");
@@ -409,7 +410,7 @@ static char * rdns_conf_rule(ngx_conf_t * cf, ngx_command_t * cmd, void * conf, 
 
     rule->domain_regex = ngx_http_regex_compile(cf, &rc);
     if (rule->domain_regex == NULL) {
-        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "unable to compile rule regex");
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "unable to compile regex rule");
         return NGX_CONF_ERROR;
     }
 
@@ -891,8 +892,8 @@ static void enable_code(ngx_http_script_engine_t * e) {
 /*
  * Module check enabled state as follows:
  *  1. Check existence of request context.
- *  2. If exists take enable from 'conf source',
- *      take enable from location config otherwise.
+ *  2. If it exists - take enable from 'conf source';
+ *      otherwise - take enable from location config.
  */
 static ngx_http_rdns_common_conf_t * rdns_get_common_conf(ngx_http_rdns_ctx_t * ctx, ngx_http_rdns_loc_conf_t * loc_cf) {
     if (loc_cf == NULL) {

@@ -150,13 +150,14 @@ should be as follows:
 
 ## Authors
 
-The original version of this module has been written by Timofey Kirillov,
-CJSC Flant.
+The original version of this module has been designed by 
+Dmitry Stolyarov, written by Timofey Kirillov, CJSC Flant 
+(flant.com).
 
 
 ## Links
 
-* The module homepage (in Russian):
-  http://flant.ru/projects/nginx-http-rdns
 * The source code on GitHub:
   https://github.com/flant/nginx-http-rdns
+* The module homepage (in Russian):
+  http://flant.ru/projects/nginx-http-rdns
