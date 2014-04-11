@@ -5,10 +5,14 @@
  * Copyright (C) 2012-2013 CJSC Flant (flant.com)
  */
 
+#include <nginx.h>
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#if !defined(nginx_version) || (nginx_version < 1005008)
+#define OLD_RESOLVER_API 1
+#endif
 
 /*********************************
  *** Nginx core resolver notes ***
@@ -449,11 +453,13 @@ static ngx_int_t resolver_handler(ngx_http_request_t * r) {
     ngx_http_core_loc_conf_t * core_loc_cf;
     ngx_resolver_ctx_t * rctx;
     ngx_http_rdns_ctx_t * ctx = ngx_http_get_module_ctx(r, ngx_http_rdns_module);
-    struct sockaddr_in * sin;
     ngx_http_rdns_common_conf_t * cconf;
 
+#if (OLD_RESOLVER_API)
+    struct sockaddr_in * sin = (struct sockaddr_in *) r->connection->sockaddr;
+#endif
+
     if (loc_cf == NULL) {
-        /* isn't possible, but who knows... */
         return NGX_DECLINED;
     }
 
@@ -509,9 +515,14 @@ static ngx_int_t resolver_handler(ngx_http_request_t * r) {
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
 
-        sin = (struct sockaddr_in *) r->connection->sockaddr;
+#if (OLD_RESOLVER_API)
         rctx->addr = sin->sin_addr.s_addr;
         rctx->type = NGX_RESOLVE_PTR;
+#else
+        rctx->addr.sockaddr = r->connection->sockaddr;
+        rctx->addr.socklen = r->connection->socklen;
+#endif
+
         rctx->handler = rdns_handler;
         rctx->data = r;
         rctx->timeout = core_loc_cf->resolver_timeout;
@@ -535,7 +546,6 @@ static ngx_int_t access_handler(ngx_http_request_t * r) {
     ngx_http_rdns_common_conf_t * cconf;
 
     if (loc_cf == NULL) {
-        /* isn't possible, but who knows... */
         return NGX_OK;
     }
 
@@ -693,8 +703,11 @@ static void dns_request(ngx_http_request_t * r, ngx_str_t hostname) {
         return;
     }
 
-    rctx->name = hostname;
+#if (OLD_RESOLVER_API)
     rctx->type = NGX_RESOLVE_A;
+#endif
+
+    rctx->name = hostname;
     rctx->handler = dns_handler;
     rctx->data = r;
     rctx->timeout = core_loc_cf->resolver_timeout;
@@ -710,7 +723,7 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {
     ngx_http_request_t * r = rctx->data;
     ngx_http_rdns_ctx_t * ctx;
     ngx_http_rdns_loc_conf_t * loc_cf;
-    struct sockaddr_in * sin;
+    struct sockaddr_in * sin = (struct sockaddr_in *) r->connection->sockaddr;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
             "rdns: dns request handler");
@@ -742,14 +755,22 @@ static void dns_handler(ngx_resolver_ctx_t * rctx) {
         var_set(r, loc_cf->rdns_result_index, var_rdns_result_not_found);
     } else {
         int found = 0;
+        in_addr_t orig_in_addr = sin->sin_addr.s_addr;
         ngx_uint_t i;
 
-        sin = (struct sockaddr_in *) r->connection->sockaddr;
         for (i = 0; i < rctx->naddrs; ++i) {
-            ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
-                    "rdns: dns request handler: checking result '%d'", rctx->addrs[i]);
+            in_addr_t resolved_in_addr;
 
-            if (rctx->addrs[i] == sin->sin_addr.s_addr) {
+#if (OLD_RESOLVER_API)
+            resolved_in_addr = rctx->addrs[i];
+#else
+            resolved_in_addr = ((struct sockaddr_in *) rctx->addrs[i].sockaddr)->sin_addr.s_addr;
+#endif
+
+            ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+                    "rdns: dns request handler: checking result '%d'", resolved_in_addr);
+
+            if (resolved_in_addr == orig_in_addr) {
                 ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                         "rdns: dns request handler: resolved to '%V'",
                         &rctx->name);
