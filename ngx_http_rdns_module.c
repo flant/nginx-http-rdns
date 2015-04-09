@@ -5,8 +5,8 @@
  * Copyright (C) 2012-2013 CJSC Flant (flant.com)
  */
 
-#include <nginx.h>
 #include <ngx_config.h>
+#include <nginx.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
 
