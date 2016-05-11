@@ -214,7 +214,7 @@ static char * merge_loc_conf(ngx_conf_t * cf, void * parent, void * child) {
     }
 #endif
 
-    if (conf->conf.enabled && ((core_loc_cf->resolver == NULL) || (core_loc_cf->resolver->udp_connections.nelts == 0))) {
+    if (conf->conf.enabled && ((core_loc_cf->resolver == NULL) || (core_loc_cf->resolver-connections.nelts == 0))) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "no core resolver defined for rdns");
         return NGX_CONF_ERROR;
     }
