@@ -13,6 +13,9 @@
 #if !defined(nginx_version) || (nginx_version < 1005008)
 #define OLD_RESOLVER_API 1
 #endif
+#if !defined(nginx_version) || (nginx_version < 1009011)
+#define OLD_RESOLVER_CONNECTIONS_API 1
+#endif
 
 /*********************************
  *** Nginx core resolver notes ***
@@ -214,7 +217,13 @@ static char * merge_loc_conf(ngx_conf_t * cf, void * parent, void * child) {
     }
 #endif
 
-    if (conf->conf.enabled && ((core_loc_cf->resolver == NULL) || (core_loc_cf->resolver->udp_connections.nelts == 0))) {
+    if (conf->conf.enabled && ( (core_loc_cf->resolver == NULL) ||
+#if (OLD_RESOLVER_CONNECTIONS_API)
+                                (core_loc_cf->resolver->udp_connections.nelts == 0)
+#else
+                                (core_loc_cf->resolver->connections.nelts == 0)
+#endif
+                              )) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "no core resolver defined for rdns");
         return NGX_CONF_ERROR;
     }
