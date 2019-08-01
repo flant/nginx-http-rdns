@@ -7,7 +7,8 @@ connection and provides simple access control of incoming hostname
 by allow/deny rules (similar to HttpAccessModule allow/deny
 directives; regular expressions are supported). Module works with
 the DNS server defined by the standard resolver directive.
-
+This module uses nginx core resolver cache when resolving DNS lookup,
+for a maximum of 30 seconds or DNS response TTL.
 
 ## Example
 
@@ -150,8 +151,8 @@ should be as follows:
 
 ## Authors
 
-The original version of this module has been designed by 
-Dmitry Stolyarov, written by Timofey Kirillov, CJSC Flant 
+The original version of this module has been designed by
+Dmitry Stolyarov, written by Timofey Kirillov, CJSC Flant
 (flant.com).
 
 
