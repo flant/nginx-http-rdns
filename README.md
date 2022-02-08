@@ -1,5 +1,13 @@
 # Nginx HTTP rDNS module
 
+## Disclaimer (February, 2022)
+
+This module hasn't been maintained by its original developers
+for years already. However, we can see that new issues still emerge
+with no proper reaction from us. Please, feel free to fork
+the project and continue its development. We'll be happy to see
+its future powered by the community.
+
 ## Summary
 
 This module allows to make a reverse DNS (rDNS) lookup for incoming
@@ -152,13 +160,4 @@ should be as follows:
 ## Authors
 
 The original version of this module has been designed by
-Dmitry Stolyarov, written by Timofey Kirillov, CJSC Flant
-(flant.com).
-
-
-## Links
-
-* The source code on GitHub:
-  https://github.com/flant/nginx-http-rdns
-* The module homepage (in Russian):
-  http://flant.ru/projects/nginx-http-rdns
+Dmitry Stolyarov, written by Timofey Kirillov, [Flant](https://flant.com/).
